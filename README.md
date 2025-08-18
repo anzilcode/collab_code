@@ -1,1 +1,1 @@
-# collab_code
+RIM - Interview Administration Suite
