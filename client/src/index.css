@@ -1,0 +1,32 @@
+@import "tailwindcss";
+
+/* Chrome, Safari, Edge */
+input:-webkit-autofill {
+  -webkit-box-shadow: 0 0 0px 1000px #374151 inset; /* matches bg-slate-700 */
+  -webkit-text-fill-color: #f1f5f9; /* matches text-slate-100 */
+  transition: background-color 5000s ease-in-out 0s;
+}
+
+/* Firefox */
+input:-moz-autofill {
+  box-shadow: 0 0 0px 1000px #374151 inset;
+  -moz-text-fill-color: #f1f5f9;
+}
+
+
+.nav-link {
+  @apply text-slate-300 font-medium px-3 py-1.5 relative transition-colors duration-200;
+}
+
+.nav-link::after {
+  content: '';
+  @apply absolute left-0 -bottom-0.5 w-0 h-0.5 bg-blue-400 transition-all duration-300;
+}
+
+.nav-link:hover::after {
+  @apply w-full;
+}
+
+.nav-link:hover {
+  @apply text-blue-400;
+}
