@@ -31,8 +31,6 @@ const VideoCall = ({
   const toggleFullScreen = () => setIsFullScreen(!isFullScreen);
 
   useEffect(() => {
-  let pc;
-  let stream;
 
  const initializeVideo = async () => {
   console.log("Candidate ready for signals, roomId:", roomId);
@@ -95,7 +93,11 @@ const VideoCall = ({
 };
 
 
-  initializeVideo();
+const cleanupPromise = initializeVideo();
+
+  return () => {
+    cleanupPromise.then(cleanup => cleanup && cleanup());
+  };
 }, [roomId]);
 
 
