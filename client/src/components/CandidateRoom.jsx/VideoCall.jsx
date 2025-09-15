@@ -31,70 +31,73 @@ const VideoCall = ({
   const toggleFullScreen = () => setIsFullScreen(!isFullScreen);
 
   useEffect(() => {
-    let pc;
-    let stream;
+  let pc;
+  let stream;
 
-    const initializeVideo = async () => {
-      try {
-        // Get user media with the current video/audio settings
-        stream = await navigator.mediaDevices.getUserMedia({ 
-          video: isVideoOn, 
-          audio: isMicOn 
-        });
-        
-        setLocalStream(stream);
-        setIsStreamReady(true);
+ const initializeVideo = async () => {
+  console.log("Candidate ready for signals, roomId:", roomId);
 
-        // Attach local stream to your video element
-        if (yourVideoRef.current) {
-          yourVideoRef.current.srcObject = stream;
-        }
+  let pc;
+  let stream;
 
-        // Create peer connection
-        pc = createPeerConnection();
-
-        // Add local tracks to peer connection
-        stream.getTracks().forEach(track => {
-          pc.addTrack(track, stream);
-        });
-
-        // Handle remote stream
-        pc.ontrack = event => {
-          if (interviewerVideoRef.current) {
-            interviewerVideoRef.current.srcObject = event.streams[0];
-            setIsInterviewerVideoOn(true);
-          }
-        };
-
-        pc.onicecandidate = event => {
-          if (event.candidate && roomId) {
-            sendVideoSignal(roomId, { type: 'ice-candidate', candidate: event.candidate }, 'candidate');
-          }
-        };
-
-        // Send offer
-        const offer = await createOffer();
-        if (roomId) sendVideoSignal(roomId, { type: 'offer', sdp: offer }, 'candidate');
-      } catch (error) {
-        console.error('Error accessing media devices:', error);
-      }
-    };
-
-    initializeVideo();
-
-    const unsubscribe = subscribeToVideoSignal(async (data) => {
-      if (data.type === 'answer') await setRemoteDescription(data.sdp);
-      else if (data.type === 'ice-candidate') await addIceCandidate(data.candidate);
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: isVideoOn,
+      audio: isMicOn
     });
+    setLocalStream(stream);
+    setIsStreamReady(true);
 
-    return () => {
-      unsubscribe();
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop());
-      }
-      if (pc) pc.close();
-    };
-  }, [roomId]);
+    if (yourVideoRef.current) yourVideoRef.current.srcObject = stream;
+  } catch (err) {
+    console.warn("Could not access local media, continuing without it:", err);
+    setIsStreamReady(false); // optional, just to know
+  }
+
+  // Create peer connection regardless of local camera
+  pc = createPeerConnection((remoteStream) => {
+    if (interviewerVideoRef.current) interviewerVideoRef.current.srcObject = remoteStream;
+    setIsInterviewerVideoOn(true);
+  });
+
+  // If we have local stream, add tracks
+  if (stream) addLocalStream(pc, stream);
+
+  // ICE candidate handling
+  pc.onicecandidate = (event) => {
+    if (event.candidate && roomId) {
+      sendVideoSignal(roomId, { type: 'ice-candidate', candidate: event.candidate }, 'candidate');
+    }
+  };
+
+  // Subscribe to signaling
+  console.log("Candidate subscribing to video signals");
+  const unsubscribe = subscribeToVideoSignal(async (signalData) => {
+    console.log("Candidate received signal:", signalData);
+
+    if (!pc) return;
+
+    if (signalData.type === 'offer') {
+      await setRemoteDescription(pc, signalData.sdp);
+      const answer = await createAnswer(pc);
+      if (roomId) sendVideoSignal(roomId, { type: 'answer', sdp: answer }, 'candidate');
+    } else if (signalData.type === 'ice-candidate') {
+      await addIceCandidate(pc, signalData.candidate);
+    }
+  });
+
+  // Cleanup
+  return () => {
+    unsubscribe();
+    if (stream) stream.getTracks().forEach(track => track.stop());
+    if (pc) pc.close();
+  };
+};
+
+
+  initializeVideo();
+}, [roomId]);
+
 
 
   useEffect(() => {

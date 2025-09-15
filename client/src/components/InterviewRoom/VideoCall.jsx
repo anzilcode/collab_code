@@ -29,91 +29,96 @@ const VideoCall = ({
   const candidateVideoRef = useRef(null);
   const interviewerVideoRef = useRef(null);
 
-  useEffect(() => {
-    // 1. Get your local media
-    navigator.mediaDevices.getUserMedia({ 
-      video: isInterviewerVideoOn, 
-      audio: isInterviewerAudioOn 
-    })
-      .then((stream) => {
-        setLocalStream(stream);
-        
-        // Set the interviewer video (your video) to show local stream
-        if (interviewerVideoRef.current) {
-          interviewerVideoRef.current.srcObject = stream;
-        }
-        
-        addLocalStream(stream);
+useEffect(() => {
+  const pcRef = { current: null }; // temporary ref-like object
+  console.log("Interviewer initializing, roomId:", roomId);
 
-        const pc = createPeerConnection((remoteStream) => {
-          // Set the candidate video to show remote stream
-          if (candidateVideoRef.current) {
-            candidateVideoRef.current.srcObject = remoteStream;
-          }
-        });
 
-        // Send ICE candidates via socket
-        pc.onicecandidate = (event) => {
-          if (event.candidate && roomId) {
-            sendVideoSignal(roomId, { 
-              type: "ice-candidate", 
-              candidate: event.candidate 
-            }, "interviewer");
-          }
-        };
+  // 1. Get local media
+  navigator.mediaDevices.getUserMedia({
+    video: isInterviewerVideoOn,
+    audio: isInterviewerAudioOn
+  })
+  .then(async (stream) => {
+    setLocalStream(stream);
 
-        // Send offer
-        (async () => {
-          try {
-            const offer = await createOffer();
-            if (roomId) {
-              sendVideoSignal(roomId, { 
-                type: "offer", 
-                sdp: offer 
-              }, "interviewer");
-            }
-          } catch (error) {
-            console.error("Error creating offer:", error);
-          }
-        })();
-      })
-      .catch((error) => {
-        console.error("Error accessing media devices:", error);
-      });
+    if (interviewerVideoRef.current) {
+      interviewerVideoRef.current.srcObject = stream;
+    }
 
-    // 2. Handle incoming signals
-    const unsubscribe = subscribeToVideoSignal(async (data, from) => {
-      try {
-        if (data.type === "answer") {
-          await setRemoteDescription(data.sdp);
-        } else if (data.type === "ice-candidate") {
-          await addIceCandidate(data.candidate);
-        }
-      } catch (error) {
-        console.error("Error handling video signal:", error);
+    // Create PeerConnection and store it in pcRef
+    const pc = createPeerConnection((remoteStream) => {
+      if (candidateVideoRef.current) {
+        candidateVideoRef.current.srcObject = remoteStream;
       }
     });
+    pcRef.current = pc;
 
-    return () => {
-      unsubscribe();
-      // Clean up local stream
-      if (localStream) {
-        localStream.getTracks().forEach(track => track.stop());
+    // Add local stream
+    addLocalStream(pc, stream);
+
+    // ICE candidates
+    pc.onicecandidate = (event) => {
+      if (event.candidate && roomId) {
+        sendVideoSignal(roomId, {
+          type: "ice-candidate",
+          candidate: event.candidate
+        }, "interviewer");
       }
     };
-  }, [roomId, isInterviewerVideoOn, isInterviewerAudioOn]);
 
-
-  useEffect(() => {
-    if (localStream) {
-      localStream.getVideoTracks().forEach(track => {
-        track.enabled = isInterviewerVideoOn;
-      });
-      localStream.getAudioTracks().forEach(track => {
-        track.enabled = isInterviewerAudioOn;
-      });
+    // Send offer
+    try {
+      const offer = await createOffer(pc);
+      console.log("Interviewer sending offer:", offer);
+      if (roomId) {
+        sendVideoSignal(roomId, { type: "offer", sdp: offer }, "interviewer");
+         console.log("Offer sent to room:", roomId);
+      }
+    } catch (err) {
+      console.error("Error creating offer:", err);
     }
-  }, [isInterviewerVideoOn, isInterviewerAudioOn, localStream]);
+  })
+  .catch((err) => console.error("Error accessing media devices:", err));
+
+  // 2. Handle incoming signals
+  const unsubscribe = subscribeToVideoSignal(async (signalData) => {
+    const pc = pcRef.current;
+    if (!pc) return;
+
+    if (signalData.type === "answer") {
+      await setRemoteDescription(pc, signalData.sdp);
+    } else if (signalData.type === "ice-candidate") {
+      await addIceCandidate(pc, signalData.candidate);
+    }
+  });
+
+  return () => {
+    unsubscribe();
+    if (localStream) {
+      localStream.getTracks().forEach(track => track.stop());
+    }
+    if (pcRef.current) {
+      pcRef.current.close();
+    }
+  };
+}, [roomId, isInterviewerVideoOn, isInterviewerAudioOn]);
+
+
+useEffect(() => {
+  if (!localStream) return;
+
+  // Toggle video tracks
+  localStream.getVideoTracks().forEach(track => {
+    track.enabled = Boolean(isInterviewerVideoOn);
+  });
+
+  // Toggle audio tracks
+  localStream.getAudioTracks().forEach(track => {
+    track.enabled = Boolean(isInterviewerAudioOn);
+  });
+}, [isInterviewerVideoOn, isInterviewerAudioOn, localStream]);
+
 
   if (isFullscreen) {
     return (

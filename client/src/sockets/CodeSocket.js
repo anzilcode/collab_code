@@ -218,6 +218,30 @@ export const subscribeToVideoSignal = (callback) => {
   };
 };
 
+// Emit ICE candidate to other peer
+export const sendIceCandidate = (roomId, candidate) => {
+  if (!socket) return;
+  socket.emit("ice-candidate", { roomId, candidate });
+};
+
+// Subscribe to ICE candidates from other peer
+export const subscribeToIceCandidate = (callback) => {
+  if (!socket) return () => {};
+
+  const handler = ({ candidate }) => {
+    if (candidate) {
+      callback(candidate);
+    }
+  };
+
+  socket.on("ice-candidate", handler);
+
+  return () => {
+    if (socket) socket.off("ice-candidate", handler);
+  };
+};
+
+
 
 
 
